@@ -1,0 +1,114 @@
+.truth-guardian-floating-ui {
+  position: absolute;
+  z-index: 999999;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 400px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  color: #fff;
+}
+
+.truth-guardian-floating-ui.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.tg-logo {
+  font-weight: 600;
+  background: linear-gradient(to right, #60a5fa, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.tg-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.tg-content {
+  padding: 16px;
+}
+
+.tg-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.tg-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(148, 163, 184, 0.1);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.tg-credibility-meter {
+  margin-bottom: 16px;
+}
+
+.tg-meter-bar {
+  height: 8px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.tg-meter-fill {
+  height: 100%;
+  width: var(--credibility);
+  background: linear-gradient(to right, #22c55e, #60a5fa);
+  transition: width 0.5s ease-out;
+}
+
+.tg-explanation {
+  margin-bottom: 16px;
+  line-height: 1.6;
+  color: #e2e8f0;
+}
+
+.tg-warnings {
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.tg-warnings h3 {
+  color: #ef4444;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.tg-warnings ul {
+  list-style-type: disc;
+  padding-left: 20px;
+  color: #fca5a5;
+}
+
+.hidden {
+  display: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+} 
