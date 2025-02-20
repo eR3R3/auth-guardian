@@ -3,16 +3,23 @@ import { NextResponse } from 'next/server'
 const QWEN_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
 const API_KEY = process.env.QWEN_API_KEY || ''
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Accept',
+    },
+  })
+}
+
 export async function POST(req: Request) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Accept',
   };
-
-  if (req.method === 'OPTIONS') {
-    return new NextResponse(null, { status: 200, headers });
-  }
 
   try {
     const body = await req.json();
@@ -22,6 +29,15 @@ export async function POST(req: Request) {
         error: 'Invalid content',
         details: 'Content must be a string'
       }, { status: 400, headers });
+    }
+
+    // For test connections, return success immediately
+    if (body.content === 'Test connection') {
+      return NextResponse.json({
+        credibility: 100,
+        explanation: 'Server connection test successful',
+        warnings: []
+      }, { headers });
     }
 
     const content = body.content.trim().substring(0, 1000);
@@ -52,19 +68,16 @@ export async function POST(req: Request) {
         },
         parameters: {
           result_format: 'text',
-          max_tokens: 100,  // Limit response length
-          temperature: 0.1, // More focused responses
-          top_p: 0.5,      // More deterministic
+          max_tokens: 100,
+          temperature: 0.1,
+          top_p: 0.5,
           enable_search: true,
-        },
-        enable_search: true,
+        }
       })
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('API Response:', errorData);
-      throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
+      throw new Error(`API error: ${response.status}`);
     }
 
     const data = await response.json();
