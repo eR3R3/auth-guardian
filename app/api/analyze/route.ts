@@ -1,208 +1,386 @@
-import { NextResponse } from 'next/server'
-
-const QWEN_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
-const API_KEY = process.env.QWEN_API_KEY || ''
-
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Accept',
-    },
-  })
-}
+import { NextResponse } from "next/server";
+import { OpenAI } from "openai";
 
 export async function POST(req: Request) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Accept',
-  };
-
   try {
     const body = await req.json();
     
-    if (!body?.content || typeof body.content !== 'string') {
-      return NextResponse.json({
-        error: 'Invalid content',
-        details: 'Content must be a string'
-      }, { status: 400, headers });
+    if (!body?.content) {
+      return NextResponse.json({ error: 'Content is required' }, { status: 400 });
     }
 
-    // For test connections, return success immediately
-    if (body.content === 'Test connection') {
-      return NextResponse.json({
-        credibility: 100,
-        explanation: 'Server connection test successful',
-        warnings: []
-      }, { headers });
-    }
-
-    const content = body.content.trim().substring(0, 1000);
-
-    const response = await fetch(QWEN_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'qwen-plus',
-        input: {
-          messages: [
-            {
-              role: 'system',
-              content: `You are a fact-checker. Be extremely concise. For the given content:
-              1. Give a clear VERDICT: [TRUE/FALSE/PARTIALLY TRUE]
-              2. Provide ONE key piece of evidence
-              3. List up to TWO potential issues
-              Keep total response under 100 words.`
-            },
-            {
-              role: 'user',
-              content
-            }
-          ]
-        },
-        parameters: {
-          result_format: 'text',
-          max_tokens: 100,
-          temperature: 0.1,
-          top_p: 0.5,
-          enable_search: true,
-        }
-      })
+    const client = new OpenAI({
+      apiKey: process.env.HUNYUAN_API_KEY,
+      baseURL: "https://api.hunyuan.cloud.tencent.com/v1"
     });
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
+    const systemPrompt = `You are an expert fact-checker and credibility analyst. 请不要用MarkDown.
+    Follow this EXACT format in your response:
 
-    const data = await response.json();
-    const analysis = data.output?.text || '';
+    VERDICT: [Choose ONE: VERIFIED TRUE / LIKELY TRUE / UNVERIFIABLE / LIKELY FALSE / VERIFIED FALSE]
 
-    const result = {
+    CONFIDENCE: [Rate 1-10]
+
+    EVIDENCE:
+    - Primary Source: [Cite specific evidence]
+    - Supporting Facts: [List 1-2 corroborating details]
+
+    CREDIBILITY FACTORS:
+    1. Source Quality: [Rate 1-10]
+    2. Data Accuracy: [Rate 1-10]
+    3. Context Completeness: [Rate 1-10]
+
+    POTENTIAL ISSUES:
+    - [List critical concerns]
+    - [List secondary concerns if any]
+
+    ANALYSIS SUMMARY:
+    [2-3 sentences maximum]`;
+
+    const completion = await client.chat.completions.create({
+      model: 'hunyuan-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt
+        },
+        { 
+          role: 'user', 
+          content: `
+     ${body.content.trim().substring(0, 1000)}You are an expert fact-checker and credibility analyst. 请不要用MarkDown.
+    Follow this EXACT format in your response:
+
+    VERDICT: [Choose ONE: VERIFIED TRUE / LIKELY TRUE / UNVERIFIABLE / LIKELY FALSE / VERIFIED FALSE]
+
+    CONFIDENCE: [Rate 1-10]
+
+    EVIDENCE:
+    - Primary Source: [Cite specific evidence]
+    - Supporting Facts: [List 1-2 corroborating details]
+
+    CREDIBILITY FACTORS:
+    1. Source Quality: [Rate 1-10]
+    2. Data Accuracy: [Rate 1-10]
+    3. Context Completeness: [Rate 1-10]
+
+    POTENTIAL ISSUES:
+    - [List critical concerns]
+    - [List secondary concerns if any]
+
+    ANALYSIS SUMMARY:
+    [2-3 sentences maximum]`
+        }
+      ],
+      temperature: 0.2,
+      max_tokens: 500,
+      response_format: { type: "text" }
+    });
+
+    const analysis = completion.choices[0]?.message?.content || 'Analysis failed';
+    console.log('API Response:', analysis);
+
+    return NextResponse.json({
       credibility: calculateCredibilityScore(analysis),
       explanation: analysis,
       warnings: extractWarnings(analysis)
-    };
-
-    return NextResponse.json(result, { headers });
+    });
 
   } catch (error) {
     console.error('Error:', error);
-    return NextResponse.json({
-      error: 'Analysis failed',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500, headers });
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }, { status: 500 });
   }
 }
 
 function calculateCredibilityScore(analysis: string): number {
   const text = analysis.toLowerCase();
-  
-  // Check for explicit verdicts
-  if (text.includes('verdict: true')) {
-    return 90;
-  }
-  if (text.includes('verdict: false')) {
-    return 10;
-  }
-  if (text.includes('verdict: partially true')) {
-    return 50;
-  }
-
-  // Fallback scoring
   let score = 50;
-  const indicators = {
-    positive: ['verified', 'confirmed', 'accurate', 'correct', 'proven'],
-    negative: ['false', 'incorrect', 'inaccurate', 'misleading', 'wrong'],
-    partial: ['partially', 'possibly', 'likely', 'maybe']
+
+  const confidenceMatch = text.match(/confidence:\s*(\d+)/);
+  const sourceQualityMatch = text.match(/source quality:\s*(\d+)/);
+  const dataAccuracyMatch = text.match(/data accuracy:\s*(\d+)/);
+  const contextMatch = text.match(/context completeness:\s*(\d+)/);
+
+  const weights = {
+    verdict: 0.3,
+    confidence: 0.15,
+    sourceQuality: 0.2,
+    dataAccuracy: 0.2,
+    context: 0.15
   };
 
-  indicators.positive.forEach(word => {
-    if (text.includes(word)) score += 10;
-  });
-  indicators.negative.forEach(word => {
-    if (text.includes(word)) score -= 10;
-  });
-  indicators.partial.forEach(word => {
-    if (text.includes(word)) score += 5;
+  const verdictScore = (() => {
+    if (text.includes('verified true')) return 100;
+    if (text.includes('likely true')) return 75;
+    if (text.includes('unverifiable')) return 50;
+    if (text.includes('likely false')) return 25;
+    if (text.includes('verified false')) return 0;
+    return 50;
+  })();
+  score += (verdictScore - 50) * weights.verdict;
+
+  if (confidenceMatch) {
+    const confidence = parseInt(confidenceMatch[1]);
+    score += (confidence * 10 - 50) * weights.confidence;
+  }
+
+  if (sourceQualityMatch) {
+    const sourceQuality = parseInt(sourceQualityMatch[1]);
+    score += (sourceQuality * 10 - 50) * weights.sourceQuality;
+  }
+
+  if (dataAccuracyMatch) {
+    const dataAccuracy = parseInt(dataAccuracyMatch[1]);
+    score += (dataAccuracy * 10 - 50) * weights.dataAccuracy;
+  }
+
+  if (contextMatch) {
+    const context = parseInt(contextMatch[1]);
+    score += (context * 10 - 50) * weights.context;
+  }
+
+  const modifiers = {
+    positive: ['verified', 'confirmed', 'proven', 'official source', 'direct evidence'],
+    negative: ['misleading', 'incorrect', 'false claim', 'no evidence', 'contradicted'],
+    uncertainty: ['possibly', 'unclear', 'insufficient data', 'conflicting']
+  };
+
+  modifiers.positive.forEach(term => {
+    if (text.includes(term)) score += 5;
   });
 
-  return Math.max(0, Math.min(100, score));
+  modifiers.negative.forEach(term => {
+    if (text.includes(term)) score -= 5;
+  });
+
+  modifiers.uncertainty.forEach(term => {
+    if (text.includes(term)) score -= 2;
+  });
+
+  return Math.round(Math.max(0, Math.min(100, score)));
 }
 
 function extractWarnings(analysis: string): string[] {
   const warnings: string[] = [];
   const text = analysis.toLowerCase();
 
-  const patterns = {
-    'inaccurate': 'Information is inaccurate',
-    'misleading': 'Contains misleading content',
-    'partially': 'Partially incorrect information',
-    'lacks': 'Lacks supporting evidence',
-    'possible': 'Information needs verification',
-    'outdated': 'Information may be outdated'
+  const issuesMatch = text.match(/potential issues:([^]*?)(?=\n\n|$)/i);
+  if (issuesMatch) {
+    const issues = issuesMatch[1]
+      .split('\n')
+      .filter(line => line.trim().startsWith('-'))
+      .map(line => line.replace('-', '').trim());
+    warnings.push(...issues);
+  }
+
+  const warningPatterns = {
+    'source_quality': {
+      pattern: /source quality:\s*([1-4])(\/|\s*out of\s*)10/i,
+      message: 'Low quality sources detected'
+    },
+    'data_accuracy': {
+      pattern: /data accuracy:\s*([1-4])(\/|\s*out of\s*)10/i,
+      message: 'Poor data accuracy detected'
+    },
+    'context': {
+      pattern: /context completeness:\s*([1-4])(\/|\s*out of\s*)10/i,
+      message: 'Incomplete context'
+    },
+    'confidence': {
+      pattern: /confidence:\s*([1-4])(\/|\s*out of\s*)10/i,
+      message: 'Low confidence in analysis'
+    }
   };
 
-  Object.entries(patterns).forEach(([key, warning]) => {
-    if (text.includes(key)) {
-      warnings.push(warning);
+  Object.entries(warningPatterns).forEach(([key, {pattern, message}]) => {
+    if (pattern.test(text)) {
+      warnings.push(message);
     }
   });
 
-  return warnings;
+  return [...new Set(warnings)];
 }
 
-// Helper functions for analysis
-function identifySources(content: string): string[] {
-  // Identify and verify mentioned sources
-  return [
-    "Referenced academic papers",
-    "News articles",
-    "Expert quotes"
-  ]
-}
+// import { NextResponse } from 'next/server'
+// import OpenAI from 'openai'
 
-function analyzeSentiment(content: string) {
-  // Analyze emotional tone and bias
-  return {
-    tone: "slightly negative",
-    bias: "moderate left-leaning",
-    emotionalLanguage: "medium"
-  }
-}
+// const API_KEY = process.env.TENCENT_API_KEY || ''
 
-function calculateReadability(content: string) {
-  // Calculate readability metrics
-  return {
-    fleschKincaid: 10.5,
-    complexity: "moderate",
-    technicalTerms: 12
-  }
-}
+// const openai = new OpenAI({
+//   apiKey: `${API_KEY}`,
+//   baseURL: 'https://api.lkeap.cloud.tencent.com/v1',
+// });
 
-function extractFactualClaims(content: string) {
-  // Extract and verify factual claims
-  return [
-    {
-      claim: "Example factual claim",
-      verification: "partially verified",
-      sources: ["source1", "source2"]
-    }
-  ]
-}
+// export async function POST(req: Request) {
+//   const headers = {
+//     'Access-Control-Allow-Origin': '*',
+//     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+//     'Access-Control-Allow-Headers': 'Content-Type, Accept',
+//   };
 
-function generateRelatedSources(content: string) {
-  // Suggest related reliable sources
-  return [
-    {
-      title: "Related academic paper",
-      url: "https://example.com/paper",
-      reliability: "high"
-    }
-  ]
-}
+//   try {
+//     const body = await req.json();
+    
+//     if (!body?.content || typeof body.content !== 'string') {
+//       return NextResponse.json({
+//         error: 'Invalid content',
+//         details: 'Content must be a string'
+//       }, { status: 400, headers });
+//     }
+
+//     if (body.content === 'Test connection') {
+//       return NextResponse.json({
+//         credibility: 100,
+//         explanation: 'Server connection test successful',
+//         warnings: []
+//       }, { headers });
+//     }
+
+//     const content = body.content.trim().substring(0, 1000);
+
+//     console.log('Making API request for content:', content.substring(0, 100) + '...');
+
+//     const completion = await openai.chat.completions.create({
+//       model: 'deepseek-r1',
+//       messages: [
+//         {
+//           role: 'system',
+//           content: `You are a fact-checker. Be extremely concise. For the given content:
+//           1. Give a clear VERDICT: [TRUE/FALSE/PARTIALLY TRUE]
+//           2. Provide ONE key piece of evidence
+//           3. List up to TWO potential issues
+//           Keep total response under 100 words.`
+//         },
+//         { role: 'user', content }
+//       ],
+//       temperature: 0.1,
+//       max_tokens: 100,
+//     });
+
+//     const analysis = completion.choices[0].message.content || 'Analysis failed';
+//     console.log('API Response:', analysis);
+
+//     const result = {
+//       credibility: calculateCredibilityScore(analysis),
+//       explanation: analysis,
+//       warnings: extractWarnings(analysis)
+//     };
+
+//     return NextResponse.json(result, { headers });
+
+//   } catch (error) {
+//     console.error('Error:', error);
+//     return NextResponse.json({
+//       error: 'Analysis failed',
+//       details: error instanceof Error ? error.message : 'Unknown error'
+//     }, { status: 500, headers });
+//   }
+// }
+
+// function calculateCredibilityScore(analysis: string): number {
+//   const text = analysis.toLowerCase();
+  
+//   // Check for explicit verdicts
+//   if (text.includes('verdict: true')) {
+//     return 90;
+//   }
+//   if (text.includes('verdict: false')) {
+//     return 10;
+//   }
+//   if (text.includes('verdict: partially true')) {
+//     return 50;
+//   }
+
+//   // Fallback scoring
+//   let score = 50;
+//   const indicators = {
+//     positive: ['verified', 'confirmed', 'accurate', 'correct', 'proven'],
+//     negative: ['false', 'incorrect', 'inaccurate', 'misleading', 'wrong'],
+//     partial: ['partially', 'possibly', 'likely', 'maybe']
+//   };
+
+//   indicators.positive.forEach(word => {
+//     if (text.includes(word)) score += 10;
+//   });
+//   indicators.negative.forEach(word => {
+//     if (text.includes(word)) score -= 10;
+//   });
+//   indicators.partial.forEach(word => {
+//     if (text.includes(word)) score += 5;
+//   });
+
+//   return Math.max(0, Math.min(100, score));
+// }
+
+// function extractWarnings(analysis: string): string[] {
+//   const warnings: string[] = [];
+//   const text = analysis.toLowerCase();
+
+//   const patterns = {
+//     'inaccurate': 'Information is inaccurate',
+//     'misleading': 'Contains misleading content',
+//     'partially': 'Partially incorrect information',
+//     'lacks': 'Lacks supporting evidence',
+//     'possible': 'Information needs verification',
+//     'outdated': 'Information may be outdated'
+//   };
+
+//   Object.entries(patterns).forEach(([key, warning]) => {
+//     if (text.includes(key)) {
+//       warnings.push(warning);
+//     }
+//   });
+
+//   return warnings;
+// }
+
+// // Helper functions for analysis
+// function identifySources(content: string): string[] {
+//   // Identify and verify mentioned sources
+//   return [
+//     "Referenced academic papers",
+//     "News articles",
+//     "Expert quotes"
+//   ]
+// }
+
+// function analyzeSentiment(content: string) {
+//   // Analyze emotional tone and bias
+//   return {
+//     tone: "slightly negative",
+//     bias: "moderate left-leaning",
+//     emotionalLanguage: "medium"
+//   }
+// }
+
+// function calculateReadability(content: string) {
+//   // Calculate readability metrics
+//   return {
+//     fleschKincaid: 10.5,
+//     complexity: "moderate",
+//     technicalTerms: 12
+//   }
+// }
+
+// function extractFactualClaims(content: string) {
+//   // Extract and verify factual claims
+//   return [
+//     {
+//       claim: "Example factual claim",
+//       verification: "partially verified",
+//       sources: ["source1", "source2"]
+//     }
+//   ]
+// }
+
+// function generateRelatedSources(content: string) {
+//   // Suggest related reliable sources
+//   return [
+//     {
+//       title: "Related academic paper",
+//       url: "https://example.com/paper",
+//       reliability: "high"
+//     }
+//   ]
+// }
