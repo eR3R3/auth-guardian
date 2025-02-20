@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 
     VERDICT: [Choose ONE: VERIFIED TRUE / LIKELY TRUE / UNVERIFIABLE / LIKELY FALSE / VERIFIED FALSE]
 
-    CONFIDENCE: [Rate 1-10]
+    CONFIDENCE: [Rate 1-10],
 
     EVIDENCE:
     - Primary Source: [Cite specific evidence]
