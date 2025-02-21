@@ -80,7 +80,7 @@ async function analyzeContent(text) {
     console.error('Analysis error:', error);
     return {
       credibility: 0,
-      explanation: `Error: ${error.message}. Please check if the server is running at http://localhost:3000`,
+      explanation: `Error: ${error.message}. Please check if the server is running at https://auth-guardian-backend.vercel.app/`,
       warnings: ['Connection failed - Please try again']
     };
   }
