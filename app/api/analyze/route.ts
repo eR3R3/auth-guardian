@@ -72,7 +72,7 @@ export async function POST(req: Request) {
         }
       ],
       temperature: 0.2,
-      max_tokens: 500,
+      max_tokens: 90,
       response_format: { type: "text" }
     });
 
