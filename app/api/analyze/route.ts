@@ -47,12 +47,12 @@ export async function POST(req: Request) {
         { 
           role: 'user', 
           content: `
-     ${body.content.trim().substring(0, 1000)}You are an expert fact-checker and credibility analyst. 请不要用MarkDown. 在合适的地方换行。
+     ${body.content.trim().substring(0, 1000)}You are an expert fact-checker and credibility analyst. 请不要用MarkDown.
     Follow this EXACT format in your response:
 
     VERDICT: [Choose ONE: VERIFIED TRUE / LIKELY TRUE / UNVERIFIABLE / LIKELY FALSE / VERIFIED FALSE]
 
-    CONFIDENCE: [Rate 1-10],
+    CONFIDENCE: [Rate 1-10]
 
     EVIDENCE:
     - Primary Source: [Cite specific evidence]
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
         }
       ],
       temperature: 0.2,
-      max_tokens: 90,
+      max_tokens: 500,
       response_format: { type: "text" }
     });
 
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
 
 function calculateCredibilityScore(analysis: string): number {
   const text = analysis.toLowerCase();
-  let score = 60;
+  let score = 50;
 
   const confidenceMatch = text.match(/confidence:\s*(\d+)/);
   const sourceQualityMatch = text.match(/source quality:\s*(\d+)/);
@@ -103,84 +103,60 @@ function calculateCredibilityScore(analysis: string): number {
   const contextMatch = text.match(/context completeness:\s*(\d+)/);
 
   const weights = {
-    verdict: 0.35,
+    verdict: 0.3,
     confidence: 0.15,
-    sourceQuality: 0.25,
-    dataAccuracy: 0.25,
+    sourceQuality: 0.2,
+    dataAccuracy: 0.2,
     context: 0.15
   };
 
   const verdictScore = (() => {
     if (text.includes('verified true')) return 100;
-    if (text.includes('likely true')) return 85;
-    if (text.includes('unverifiable')) return 60;
-    if (text.includes('likely false')) return 30;
+    if (text.includes('likely true')) return 75;
+    if (text.includes('unverifiable')) return 50;
+    if (text.includes('likely false')) return 25;
     if (text.includes('verified false')) return 0;
-    return 60;
+    return 50;
   })();
   score += (verdictScore - 50) * weights.verdict;
 
   if (confidenceMatch) {
     const confidence = parseInt(confidenceMatch[1]);
-    score += (confidence * 12 - 50) * weights.confidence;
+    score += (confidence * 10 - 50) * weights.confidence;
   }
 
   if (sourceQualityMatch) {
     const sourceQuality = parseInt(sourceQualityMatch[1]);
-    score += (sourceQuality * 12 - 50) * weights.sourceQuality;
+    score += (sourceQuality * 10 - 50) * weights.sourceQuality;
   }
 
   if (dataAccuracyMatch) {
     const dataAccuracy = parseInt(dataAccuracyMatch[1]);
-    score += (dataAccuracy * 12 - 50) * weights.dataAccuracy;
+    score += (dataAccuracy * 10 - 50) * weights.dataAccuracy;
   }
 
   if (contextMatch) {
     const context = parseInt(contextMatch[1]);
-    score += (context * 12 - 50) * weights.context;
+    score += (context * 10 - 50) * weights.context;
   }
 
   const modifiers = {
-    strong_positive: ['verified by multiple sources', 'official confirmation', 'direct evidence', 'proven fact', 'widely accepted'],
-    positive: ['verified', 'confirmed', 'proven', 'official source', 'direct evidence', 'reliable source', 'expert opinion', 'factual', 'documented'],
-    supporting: ['consistent with', 'supported by', 'aligns with', 'corroborated', 'validated'],
+    positive: ['verified', 'confirmed', 'proven', 'official source', 'direct evidence'],
     negative: ['misleading', 'incorrect', 'false claim', 'no evidence', 'contradicted'],
     uncertainty: ['possibly', 'unclear', 'insufficient data', 'conflicting']
   };
 
-  modifiers.strong_positive.forEach(term => {
-    if (text.includes(term)) score += 8;
-  });
-
   modifiers.positive.forEach(term => {
-    if (text.includes(term)) score += 6;
-  });
-
-  modifiers.supporting.forEach(term => {
-    if (text.includes(term)) score += 4;
+    if (text.includes(term)) score += 5;
   });
 
   modifiers.negative.forEach(term => {
-    if (text.includes(term)) score -= 4;
+    if (text.includes(term)) score -= 5;
   });
 
   modifiers.uncertainty.forEach(term => {
-    if (text.includes(term)) score -= 1;
+    if (text.includes(term)) score -= 2;
   });
-
-  if (text.includes('primary source')) score += 5;
-  if (text.includes('multiple sources')) score += 5;
-  if (text.includes('expert analysis')) score += 5;
-  if (text.includes('recent data')) score += 3;
-  if (text.includes('comprehensive')) score += 3;
-  if (text.includes('high confidence')) score += 5;
-  if (text.includes('strong evidence')) score += 5;
-
-  if (text.includes('evidence') && text.includes('supporting facts')) score += 5;
-
-  const sourceScore = sourceQualityMatch ? parseInt(sourceQualityMatch[1]) : 0;
-  if (sourceScore >= 8) score += 8;
-  else if (sourceScore >= 6) score += 5;
 
   return Math.round(Math.max(0, Math.min(100, score)));
 }

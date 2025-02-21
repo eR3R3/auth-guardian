@@ -1,12 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  distDir: 'build/app',
+  distDir: "build/app",
   images: {
     unoptimized: true,
-  },
-  experimental: {
-    serverActions: true,
   },
   async headers() {
     return [

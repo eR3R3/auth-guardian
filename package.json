@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "npm run build:app && npm run build:extension",
     "build:app": "next build",
     "build:extension": "node build-extension.js",
     "dev": "next dev",
