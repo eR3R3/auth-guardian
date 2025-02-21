@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         { 
           role: 'user', 
           content: `
-     ${body.content.trim().substring(0, 1000)}You are an expert fact-checker and credibility analyst. 请不要用MarkDown.
+     ${body.content.trim().substring(0, 1000)}, 请上网搜查相关信息,并根据信息进行分析。You are an expert fact-checker and credibility analyst. 请不要用MarkDown.
     Follow this EXACT format in your response:
 
     VERDICT: [Choose ONE: VERIFIED TRUE / LIKELY TRUE / UNVERIFIABLE / LIKELY FALSE / VERIFIED FALSE]
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
         }
       ],
       temperature: 0.2,
-      max_tokens: 500,
+      max_tokens: 70,
       response_format: { type: "text" }
     });
 
@@ -103,20 +103,20 @@ function calculateCredibilityScore(analysis: string): number {
   const contextMatch = text.match(/context completeness:\s*(\d+)/);
 
   const weights = {
-    verdict: 0.3,
+    verdict: 0.35,
     confidence: 0.15,
     sourceQuality: 0.2,
     dataAccuracy: 0.2,
-    context: 0.15
+    context: 0.1
   };
 
   const verdictScore = (() => {
-    if (text.includes('verified true')) return 100;
-    if (text.includes('likely true')) return 75;
-    if (text.includes('unverifiable')) return 50;
-    if (text.includes('likely false')) return 25;
-    if (text.includes('verified false')) return 0;
-    return 50;
+    if (text.toLowerCase().includes('verified true')) return 100;
+    if (text.toLowerCase().includes('likely true')) return 75;
+    if (text.toLowerCase().includes('unverifiable')) return 25;
+    if (text.toLowerCase().includes('likely false')) return 15;
+    if (text.toLowerCase().includes('verified false')) return 0;
+    return 35;
   })();
   score += (verdictScore - 50) * weights.verdict;
 
@@ -140,10 +140,51 @@ function calculateCredibilityScore(analysis: string): number {
     score += (context * 10 - 50) * weights.context;
   }
 
+  const controversialTerms = [
+    'controversial',
+    'disputed',
+    'debated',
+    'political',
+    'contested',
+    'complex situation',
+    'sensitive topic',
+    'ongoing debate'
+  ];
+
+  controversialTerms.forEach(term => {
+    if (text.includes(term)) score -= 10;
+  });
+
   const modifiers = {
-    positive: ['verified', 'confirmed', 'proven', 'official source', 'direct evidence'],
-    negative: ['misleading', 'incorrect', 'false claim', 'no evidence', 'contradicted'],
-    uncertainty: ['possibly', 'unclear', 'insufficient data', 'conflicting']
+    positive: [
+      'verified',
+      'confirmed',
+      'proven',
+      'official source',
+      'direct evidence',
+      'reliable',
+      'authoritative',
+      'expert',
+      'documented'
+    ],
+    negative: [
+      'misleading',
+      'incorrect',
+      'false claim',
+      'no evidence',
+      'contradicted',
+      'propaganda',
+      'biased',
+      'unsubstantiated'
+    ],
+    uncertainty: [
+      'possibly',
+      'unclear',
+      'insufficient data',
+      'conflicting',
+      'ambiguous',
+      'uncertain'
+    ]
   };
 
   modifiers.positive.forEach(term => {
@@ -151,12 +192,24 @@ function calculateCredibilityScore(analysis: string): number {
   });
 
   modifiers.negative.forEach(term => {
-    if (text.includes(term)) score -= 5;
+    if (text.includes(term)) score -= 8;
   });
 
   modifiers.uncertainty.forEach(term => {
-    if (text.includes(term)) score -= 2;
+    if (text.includes(term)) score -= 5;
   });
+
+  if (text.includes('multiple verified sources') || 
+      text.includes('extensively documented') ||
+      text.includes('clear evidence')) {
+    score += 10;
+  }
+
+  if (text.includes('highly contested') || 
+      text.includes('politically sensitive') ||
+      text.includes('no international consensus')) {
+    score -= 15;
+  }
 
   return Math.round(Math.max(0, Math.min(100, score)));
 }
@@ -201,6 +254,8 @@ function extractWarnings(analysis: string): string[] {
 
   return [...new Set(warnings)];
 }
+
+
 
 // import { NextResponse } from 'next/server'
 // import OpenAI from 'openai'
